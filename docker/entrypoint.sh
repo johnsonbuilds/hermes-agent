@@ -13,12 +13,12 @@ mkdir -p "$HERMES_HOME"/{cron,sessions,logs,hooks,memories,skills}
 
 # .env
 if [ ! -f "$HERMES_HOME/.env" ]; then
-    cp "$INSTALL_DIR/.env.example" "$HERMES_HOME/.env"
+    cp "$INSTALL_DIR/.clawcloud.env.example" "$HERMES_HOME/.env"
 fi
 
 # config.yaml
 if [ ! -f "$HERMES_HOME/config.yaml" ]; then
-    cp "$INSTALL_DIR/cli-config.yaml.example" "$HERMES_HOME/config.yaml"
+    cp "$INSTALL_DIR/clawcloud-config.yaml.example" "$HERMES_HOME/config.yaml"
 fi
 
 # SOUL.md
