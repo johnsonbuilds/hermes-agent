@@ -17,3 +17,4 @@
 ### 修改文件 (Modified Files)
 - `.github/workflows/docker-publish.yml`: 修改了 Docker 发布工作流（可能包含特定的镜像名称或推送逻辑）。
 - `docker/entrypoint.sh`: 修改了 Docker 容器启动入口脚本。
+- `Dockerfile`: pip install 只包含必须的依赖项。
