@@ -1265,6 +1265,9 @@ class GatewayRunner:
 
         logger.info("Press Ctrl+C to stop")
         
+        # Notify that the gateway is ready if AGENT_GATEWAY_READY_NOTIFY_URL is set
+        await self._notify_gateway_ready()
+
         return True
     
     async def _session_expiry_watcher(self, interval: int = 300):
@@ -5950,6 +5953,28 @@ class GatewayRunner:
                 exit_code_path.unlink(missing_ok=True)
 
         return True
+
+    async def _notify_gateway_ready(self) -> None:
+        """Send a GET request to AGENT_GATEWAY_READY_NOTIFY_URL if set."""
+        url = os.getenv("AGENT_GATEWAY_READY_NOTIFY_URL")
+        if not url:
+            return
+
+        logger.info("Notifying gateway ready: %s", url)
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as response:
+                    if response.status >= 400:
+                        logger.warning(
+                            "Gateway ready notification failed with status %d: %s",
+                            response.status,
+                            url,
+                        )
+                    else:
+                        logger.info("Gateway ready notification sent successfully")
+        except Exception as e:
+            logger.warning("Failed to send gateway ready notification to %s: %s", url, e)
 
     def _set_session_env(self, context: SessionContext) -> None:
         """Set environment variables for the current session."""
