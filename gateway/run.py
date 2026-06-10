@@ -1732,12 +1732,32 @@ class GatewayRunner:
             return True
 
         # Check platform-specific and global allowlists
-        platform_allowlist = os.getenv(platform_env_map.get(source.platform, ""), "").strip()
+        platform_var = platform_env_map.get(source.platform, "")
+        platform_allowlist = os.getenv(platform_var, "").strip()
         global_allowlist = os.getenv("GATEWAY_ALLOWED_USERS", "").strip()
 
         if not platform_allowlist and not global_allowlist:
             # No allowlists configured -- check global allow-all flag
-            return os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes")
+            if os.getenv("GATEWAY_ALLOW_ALL_USERS", "").lower() in ("true", "1", "yes"):
+                return True
+
+            # Bootstrap: First Telegram user automatically becomes owner if no allowlist exists.
+            if source.platform == Platform.TELEGRAM:
+                if not self.pairing_store.list_approved(platform_name):
+                    # Automatically approve!
+                    self.pairing_store.approve_user(platform_name, user_id, source.user_name or "")
+                    
+                    # Also try to persist to .env for clarity as requested
+                    try:
+                        from hermes_cli.config import save_env_value
+                        save_env_value("TELEGRAM_ALLOWED_USERS", user_id)
+                        logger.info("Bootstrap: First Telegram user %s (%s) saved to TELEGRAM_ALLOWED_USERS.", user_id, source.user_name)
+                    except Exception as e:
+                        logger.warning("Bootstrap: Approved %s but failed to update .env: %s", user_id, e)
+                    
+                    return True
+
+            return False
 
         # Check if user is in any allowlist
         allowed_ids = set()

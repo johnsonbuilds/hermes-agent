@@ -15,6 +15,8 @@
 - `clawcloud-config.yaml.example`: ClawCloud CLI 配置示例文件。
 
 ### 修改文件 (Modified Files)
+- `gateway/run.py`: 实现了 Telegram Bootstrap 逻辑。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`。
+- `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 - `.github/workflows/docker-publish.yml`: 修改了 Docker 发布工作流（可能包含特定的镜像名称或推送逻辑）。
 - `docker/entrypoint.sh`: 修改了 Docker 容器启动入口脚本。
 - `Dockerfile`: pip install 只包含必须的依赖项。
