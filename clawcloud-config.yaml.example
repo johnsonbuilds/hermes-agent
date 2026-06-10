@@ -2,9 +2,9 @@
 # Model Configuration
 # =============================================================================
 model:
-  provider: "custom"
-  base_url: "http://10.0.0.2:8000/v1"
-  default: "default"
+  provider: "${LLM_PROVIDER}"
+  base_url: "${LLM_BASE_URL}"
+  default: "${LLM_MODEL_ID}"
   api_key: "${LLM_API_KEY}"
   api_mode: "chat_completions"
 
