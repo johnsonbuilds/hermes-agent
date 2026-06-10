@@ -410,8 +410,10 @@ def _load_gateway_config() -> dict:
         config_path = _hermes_home / 'config.yaml'
         if config_path.exists():
             import yaml
+            from hermes_cli.config import _expand_env_vars
+
             with open(config_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f) or {}
+                return _expand_env_vars(yaml.safe_load(f) or {})
     except Exception:
         logger.debug("Could not load gateway config from %s", _hermes_home / 'config.yaml')
     return {}

@@ -15,8 +15,9 @@
 - `clawcloud-config.yaml.example`: ClawCloud CLI 配置示例文件。
 
 ### 修改文件 (Modified Files)
-- `gateway/run.py`: 实现了 Telegram Bootstrap 逻辑。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`；实现了主程序就绪后的通知逻辑。当环境变量 `AGENT_GATEWAY_READY_NOTIFY_URL` 被设置时，在 Gateway 启动完成（连接到平台并启动后台任务后）发送一个 GET 请求到该 URL。
+- `gateway/run.py`: 实现了 Telegram Bootstrap 逻辑。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`；实现了主程序就绪后的通知逻辑。当环境变量 `AGENT_GATEWAY_READY_NOTIFY_URL` 被设置时，在 Gateway 启动完成（连接到平台并启动后台任务后）发送一个 GET 请求到该 URL；修复了 Gateway 直接读取 `config.yaml` 时未展开 `${ENV_VAR}` 的问题，改为复用配置环境变量展开逻辑，避免 `model.default` / `model.provider` / `model.base_url` / `model.api_key` 将字面量占位符传入运行时。
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 - `.github/workflows/docker-publish.yml`: 修改了 Docker 发布工作流（可能包含特定的镜像名称或推送逻辑）。
 - `docker/entrypoint.sh`: 使用clawcloud的env,config example文件。
 - `Dockerfile`: pip install 只包含必须的依赖项, 使用gateway做为默认启动项。
+- `tests/gateway/test_config.py`: 新增 Gateway 配置环境变量展开测试，覆盖 `model.*` 字段和 `_resolve_gateway_model()` 返回值。

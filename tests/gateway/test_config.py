@@ -1,8 +1,10 @@
 """Tests for gateway configuration management."""
 
+import importlib
 import os
 from unittest.mock import patch
 
+import gateway.run as gateway_run
 from gateway.config import (
     GatewayConfig,
     HomeChannel,
@@ -294,3 +296,44 @@ class TestHomeChannelEnvOverrides:
             home = config.platforms[platform].home_channel
             assert home is not None, f"{platform.value}: home_channel should not be None"
             assert (home.chat_id, home.name) == expected, platform.value
+
+
+class TestGatewayRunConfigExpansion:
+    def test_load_gateway_config_expands_model_env_vars(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "model:\n"
+            "  provider: ${LLM_PROVIDER}\n"
+            "  base_url: ${LLM_BASE_URL}\n"
+            "  default: ${LLM_MODEL_ID}\n"
+            "  api_key: ${LLM_API_KEY}\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("LLM_PROVIDER", "custom")
+        monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com/v1")
+        monkeypatch.setenv("LLM_MODEL_ID", "kimi-k2")
+        monkeypatch.setenv("LLM_API_KEY", "sk-test")
+        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+
+        config = gateway_run._load_gateway_config()
+
+        assert config["model"]["provider"] == "custom"
+        assert config["model"]["base_url"] == "https://llm.example.com/v1"
+        assert config["model"]["default"] == "kimi-k2"
+        assert config["model"]["api_key"] == "sk-test"
+
+    def test_resolve_gateway_model_uses_expanded_default(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "model:\n"
+            "  default: ${LLM_MODEL_ID}\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("LLM_MODEL_ID", "deepseek-v3.1")
+        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+
+        assert gateway_run._resolve_gateway_model() == "deepseek-v3.1"
