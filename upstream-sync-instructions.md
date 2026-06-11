@@ -29,8 +29,12 @@
 
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 
-- `docker/entrypoint.sh`: 使用clawcloud的env,config example文件。
+- `docker/stage2-hook.sh`: s6-overlay 的 stage2 启动钩子。首启动 seed 配置时使用 clawcloud 的 env/config example 文件（`.clawcloud.env.example` / `clawcloud-config.yaml.example`），而非 upstream 的 `.env.example` / `cli-config.yaml.example`。
 
-- `Dockerfile`: pip install 只包含必须的依赖项, 使用gateway做为默认启动项。
+- `docker/main-wrapper.sh`: s6-overlay 容器主程序包装脚本。无参数（默认）启动时执行 `hermes gateway`（而非裸 `hermes`），保留 fork 以 gateway 为默认启动项的契约。
+
+- `docker/entrypoint.sh`: 已随 upstream 迁移为 s6-overlay 的废弃转发 shim（实际逻辑移至 `docker/stage2-hook.sh`）。clawcloud 配置注入逻辑现位于 `docker/stage2-hook.sh`。
+
+- `Dockerfile`: pip install 只包含必须的依赖项（slim extras: messaging/cron/cli/pty/mcp/acp/dingtalk/feishu，不使用 `[all]`）。已随 upstream 迁移到 s6-overlay：`ENTRYPOINT [ "/init", ".../main-wrapper.sh" ]`，gateway 默认启动项的实现移至 `docker/main-wrapper.sh`。
 
 - `tests/gateway/test_config.py`: 新增 Gateway 配置环境变量展开测试，覆盖 `model.*` 字段和 `_resolve_gateway_model()` 返回值。
