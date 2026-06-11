@@ -29,8 +29,6 @@
 
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 
-- `.github/workflows/docker-publish.yml`: 修改了 Docker 发布工作流（可能包含特定的镜像名称或推送逻辑）。
-
 - `docker/entrypoint.sh`: 使用clawcloud的env,config example文件。
 
 - `Dockerfile`: pip install 只包含必须的依赖项, 使用gateway做为默认启动项。
