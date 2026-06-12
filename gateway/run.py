@@ -1536,6 +1536,7 @@ def _load_gateway_config() -> dict:
     from ``hermes_cli.config.read_raw_config`` when the paths match.
     """
     config_path = _hermes_home / 'config.yaml'
+    from hermes_cli.config import _expand_env_vars
     try:
         from hermes_cli.config import get_config_path, read_raw_config
         # Fast path: if _hermes_home agrees with the canonical config
@@ -1543,14 +1544,13 @@ def _load_gateway_config() -> dict:
         # direct read (keeps test fixtures with a monkeypatched
         # _hermes_home working).
         if config_path == get_config_path():
-            return read_raw_config()
+            return _expand_env_vars(read_raw_config())
     except Exception:
         pass
 
     try:
         if config_path.exists():
             import yaml
-            from hermes_cli.config import _expand_env_vars
 
             with open(config_path, 'r', encoding='utf-8') as f:
                 return _expand_env_vars(yaml.safe_load(f) or {})
