@@ -9931,12 +9931,7 @@ class GatewayRunner:
                     else:
                         status_hint = " Your plan's usage limit has been reached. Please wait until it resets."
                 else:
-                    status_hint = (
-                        "\n\n⚠️ I've hit the free usage limit.\n\n"
-                        "You can keep me running by adding your API key:\n"
-                        "👉 https://hermesagentcloud.com/home?openByoKey=true\n\n"
-                        "Takes ~1 minutes, then I'm back 🚀"
-                    )
+                    status_hint = " You are being rate-limited. Please wait a moment and try again."
             elif status_code == 529:
                 status_hint = " The API is temporarily overloaded. Please try again shortly."
             elif status_code in {400, 500}:
