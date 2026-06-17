@@ -20,6 +20,8 @@
 
 - `gateway/getclawcloud.py`: 新增 Gateway 就绪通知模块，封装 `AGENT_GATEWAY_READY_NOTIFY_URL` 对应的 GET 通知逻辑。
 
+- `skills/creative/wavespeed/SKILL.md`: 新增wavespeed内置skill.
+
 ### 修改文件 (Modified Files)
 
 - `gateway/run.py`: 
@@ -39,3 +41,7 @@
 - `Dockerfile`: pip install 只包含必须的依赖项（slim extras: messaging/cron/cli/pty/mcp/acp/dingtalk/feishu，不使用 `[all]`）。已随 upstream 迁移到 s6-overlay：`ENTRYPOINT [ \"/init\", \".../main-wrapper.sh\" ]`，gateway 默认启动项的实现移至 `docker/main-wrapper.sh`。
 
 - `tests/gateway/test_config.py`: 新增 Gateway 配置环境变量展开测试，覆盖 `model.*` 字段和 `_resolve_gateway_model()` 返回值。
+
+- `README.md,README.zh-CN.md`: 更改为hermesagentcloud版本，后续不用随upstream同步
+
+- `tools/skills_hub.py`: GitHubSource-DEFAULT_TAPS添加johnsonbuilds/awesome-hermes-skills。

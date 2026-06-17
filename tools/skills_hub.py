@@ -410,6 +410,7 @@ class GitHubSource(SkillSource):
         # https://github.com/NVIDIA/skills/tree/main/skills
         {"repo": "NVIDIA/skills", "path": "skills/"},
         {"repo": "garrytan/gstack", "path": ""},
+        {"repo": "johnsonbuilds/awesome-hermes-skills", "path": "creative/"},
     ]
 
     def __init__(self, auth: GitHubAuth, extra_taps: Optional[List[Dict]] = None):
