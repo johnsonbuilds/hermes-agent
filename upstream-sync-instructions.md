@@ -25,10 +25,12 @@
 ### 修改文件 (Modified Files)
 
 - `gateway/run.py`: 
- - 实现了 Telegram Bootstrap 逻辑。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`；
  - 实现了主程序就绪后的通知逻辑。在 Gateway 启动完成调用notify_gateway_ready发送一个 GET 请求到该 URL；
  - 修复了 Gateway 直接读取 `config.yaml` 时未展开 `${ENV_VAR}` 的问题。特别修复了 `_load_gateway_config()` 在命中 `read_raw_config()` 快路径时跳过展开的 bug，确保所有路径都经过 `_expand_env_vars` 处理，避免 `model.default` 等字段将字面量占位符传入运行时。
  - 更改 `_gateway_provider_error_reply()` 中的 rate-limit 提示语：将 "⏱️ The model provider is rate-limiting requests. Please wait a moment and try again." 改为指向 https://hermesagentcloud.com/home?openByoKey=true 的自定义文案。
+
+- `gateway/authz_mixin.py`:
+ - 承接并实现了 Telegram Bootstrap 逻辑（原位于 `gateway/run.py`，随 upstream 重构迁移至此）。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`。
 
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 
