@@ -32,6 +32,8 @@
 
  3. 更改 `_gateway_provider_error_reply()` 中的 rate-limit 提示语：将 "⏱️ The model provider is rate-limiting requests. Please wait a moment and try again." 改为指向 `https://hermesagentcloud.com/home?openByoKey=true` 的自定义文案。
 
+ 4. 修复新对话 home channel onboarding 提示误判：提示逻辑不再只检查 `<PLATFORM>_HOME_CHANNEL` 环境变量，而是优先检查 `self.config.get_home_channel(source.platform)`，避免 `/sethome` 已写入运行时配置或启动配置已加载 home channel 时仍反复弹出 “No home channel is set”。
+
 - `gateway/authz_mixin.py`:承接并实现了 Telegram Bootstrap 逻辑（原位于 `gateway/run.py`，随 upstream 重构迁移至此）。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`。
 
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
@@ -45,6 +47,8 @@
 - `Dockerfile`: pip install 只包含必须的依赖项（slim extras: messaging/cron/cli/pty/mcp/acp/dingtalk/feishu，不使用 `[all]`）。已随 upstream 迁移到 s6-overlay：`ENTRYPOINT [ \"/init\", \".../main-wrapper.sh\" ]`，gateway 默认启动项的实现移至 `docker/main-wrapper.sh`。
 
 - `tests/gateway/test_config.py`: 新增 Gateway 配置环境变量展开测试，覆盖 `model.*` 字段和 `_resolve_gateway_model()` 返回值。
+
+- `tests/gateway/test_status_command.py`: 新增 Telegram home channel onboarding 回归测试，覆盖环境变量缺失但运行时 `GatewayConfig` 已存在 home channel 时不应发送 `/sethome` 提示。
 
 - `README.md,README.zh-CN.md`: 更改为hermesagentcloud版本，后续不用随upstream同步
 

@@ -8911,8 +8911,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Skip for webhooks - they deliver directly to configured targets (github_comment, etc.)
         if not history and source.platform and source.platform != Platform.LOCAL and source.platform != Platform.WEBHOOK:
             platform_name = source.platform.value
+            home_channel = self.config.get_home_channel(source.platform)
             env_key = _home_target_env_var(platform_name)
-            if not os.getenv(env_key):
+            if not home_channel and not os.getenv(env_key):
                 # Slack dispatches all Hermes commands through a single
                 # parent slash command `/hermes`; bare `/sethome` is not
                 # registered and would fail with "app did not respond".

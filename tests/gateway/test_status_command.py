@@ -474,6 +474,53 @@ async def test_first_run_non_slack_home_channel_onboarding_keeps_direct_command(
 
 
 @pytest.mark.asyncio
+async def test_first_run_home_channel_onboarding_uses_runtime_config(monkeypatch):
+    import gateway.run as gateway_run
+    from gateway.config import HomeChannel
+
+    session_entry = SessionEntry(
+        session_key=build_session_key(_make_source()),
+        session_id="sess-1",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        platform=Platform.TELEGRAM,
+        chat_type="dm",
+    )
+    runner = _make_runner(session_entry, platform=Platform.TELEGRAM)
+    runner.config.platforms[Platform.TELEGRAM].home_channel = HomeChannel(
+        platform=Platform.TELEGRAM,
+        chat_id="c1",
+        name="Home",
+    )
+    runner.session_store.load_transcript.return_value = []
+    runner.session_store.has_any_sessions.return_value = False
+    runner._run_agent = AsyncMock(
+        return_value={
+            "final_response": "ok",
+            "messages": [],
+            "tools": [],
+            "history_offset": 0,
+            "last_prompt_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "model": "openai/test-model",
+        }
+    )
+
+    monkeypatch.delenv("TELEGRAM_HOME_CHANNEL", raising=False)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+    monkeypatch.setattr(
+        "agent.model_metadata.get_model_context_length",
+        lambda *_args, **_kwargs: 100000,
+    )
+
+    result = await runner._handle_message(_make_event("hello", platform=Platform.TELEGRAM))
+
+    assert result == "ok"
+    runner.adapters[Platform.TELEGRAM].send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_handle_message_discards_stale_result_after_session_invalidation(monkeypatch):
     import gateway.run as gateway_run
 
