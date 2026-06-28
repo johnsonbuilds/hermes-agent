@@ -22,6 +22,8 @@
 
 - `skills/creative/wavespeed/SKILL.md`: 新增wavespeed内置skill.
 
+- `skills/governance/skill-health-check/SKILL.md`: 新增skill-health-check内置skill.
+
 ### 修改文件 (Modified Files)
 
 - `gateway/run.py`
