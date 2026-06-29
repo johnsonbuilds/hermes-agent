@@ -40,7 +40,11 @@
 
 - `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 
-- `docker/stage2-hook.sh`: s6-overlay 的 stage2 启动钩子。首启动 seed 配置时使用 clawcloud 的 env/config example 文件（`.clawcloud.env.example` / `clawcloud-config.yaml.example`），而非 upstream 的 `.env.example` / `cli-config.yaml.example`。
+- `docker/stage2-hook.sh`: 
+
+1. s6-overlay 的 stage2 启动钩子。首启动 seed 配置时使用 clawcloud 的 env/config example 文件（`.clawcloud.env.example` / `clawcloud-config.yaml.example`），而非 upstream 的 `.env.example` / `cli-config.yaml.example`。
+2. add `reconcile_files` before gateway start, ensure deterministic ownership reconciliation for /opt/data runtime files
+3. modify `seed_one`,deterministic write and enforce ownership explicitly
 
 - `docker/main-wrapper.sh`: s6-overlay 容器主程序包装脚本。无参数（默认）启动时执行 `hermes gateway`（而非裸 `hermes`），保留 fork 以 gateway 为默认启动项的契约。
 

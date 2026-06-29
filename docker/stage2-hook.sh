@@ -377,12 +377,22 @@ fi
 seed_one() {
     dest=$1
     src=$2
-    if [ ! -f "$HERMES_HOME/$dest" ] && [ -f "$INSTALL_DIR/$src" ]; then
-        if refuse_symlinked_path "seed" "$HERMES_HOME/$dest"; then
-            :
-        else
-            as_hermes cp "$INSTALL_DIR/$src" "$HERMES_HOME/$dest"
+
+    target="$HERMES_HOME/$dest"
+    source="$INSTALL_DIR/$src"
+
+    if [ ! -f "$target" ] && [ -f "$source" ]; then
+
+        if refuse_symlinked_path "seed" "$target"; then
+            return 0
         fi
+
+        # Fork customization:deterministic write (always root)
+        cp "$source" "$target"
+
+        # Fork customization:enforce ownership explicitly
+        chown hermes:hermes "$target" 2>/dev/null || true
+        chmod 644 "$target" 2>/dev/null || true
     fi
 }
 # Fork customization: seed from the ClawCloud example templates instead of
@@ -474,6 +484,17 @@ if [ -d "$INSTALL_DIR/skills" ]; then
     as_hermes "$INSTALL_DIR/.venv/bin/python" "$INSTALL_DIR/tools/skills_sync.py" \
         || echo "[stage2] Warning: skills_sync.py failed; continuing"
 fi
+
+# Fork customization:# Fork customization: ensure deterministic ownership reconciliation for /opt/data runtime files
+reconcile_files() {
+    for f in SOUL.md config.yaml; do
+        if [ -f "$HERMES_HOME/$f" ]; then
+            chown hermes:hermes "$HERMES_HOME/$f" 2>/dev/null || true
+            chmod 644 "$HERMES_HOME/$f" 2>/dev/null || true
+        fi
+    done
+}
+reconcile_files
 
 # --- Discover agent-browser's Chromium binary ---
 # The image's Dockerfile runs `npx playwright install chromium`, which
