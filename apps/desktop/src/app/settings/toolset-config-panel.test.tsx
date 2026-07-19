@@ -12,6 +12,8 @@ const deleteEnvVar = vi.fn()
 const revealEnvVar = vi.fn()
 const runToolsetPostSetup = vi.fn()
 const getActionStatus = vi.fn()
+const startOAuthLogin = vi.fn()
+const pollOAuthSession = vi.fn()
 
 vi.mock('@/hermes', () => ({
   getToolsetConfig: (name: string) => getToolsetConfig(name),
@@ -22,7 +24,9 @@ vi.mock('@/hermes', () => ({
   deleteEnvVar: (key: string) => deleteEnvVar(key),
   revealEnvVar: (key: string) => revealEnvVar(key),
   runToolsetPostSetup: (name: string, key: string) => runToolsetPostSetup(name, key),
-  getActionStatus: (name: string, lines?: number) => getActionStatus(name, lines)
+  getActionStatus: (name: string, lines?: number) => getActionStatus(name, lines),
+  startOAuthLogin: (providerId: string) => startOAuthLogin(providerId),
+  pollOAuthSession: (providerId: string, sessionId: string) => pollOAuthSession(providerId, sessionId)
 }))
 
 vi.mock('@/store/notifications', () => ({
@@ -356,6 +360,384 @@ describe('ToolsetConfigPanel', () => {
     })
     await waitFor(() => expect(screen.getByText(/npm ERR! install failed/)).toBeTruthy(), {
       timeout: 4000
+    })
+  })
+
+  describe('readiness pills', () => {
+    it('renders the server status instead of assuming keyless rows are Ready', async () => {
+      // The false-Ready bug: a logged-out Nous Subscription row and a
+      // never-installed local TTS both have zero env vars — the old client
+      // heuristic pilled every such row "Ready". The server now sends an
+      // honest per-provider status; the pill must follow it.
+      getToolsetConfig.mockResolvedValue(
+        config({
+          providers: [
+            {
+              name: 'Microsoft Edge TTS',
+              badge: 'free',
+              tag: 'No API key needed',
+              env_vars: [],
+              post_setup: null,
+              requires_nous_auth: false,
+              is_active: true,
+              status: 'ready'
+            },
+            {
+              name: 'Nous Subscription',
+              badge: 'subscription',
+              tag: 'Managed OpenAI TTS',
+              env_vars: [],
+              post_setup: null,
+              requires_nous_auth: true,
+              is_active: false,
+              status: 'needs_auth'
+            },
+            {
+              name: 'KittenTTS',
+              badge: 'local · free',
+              tag: 'Lightweight local ONNX TTS',
+              env_vars: [],
+              post_setup: 'kittentts',
+              requires_nous_auth: false,
+              is_active: false,
+              status: 'needs_setup'
+            }
+          ]
+        })
+      )
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="tts" />)
+
+      await screen.findByText('Microsoft Edge TTS')
+      // Exactly one Ready pill — the genuinely keyless Edge TTS row.
+      expect(screen.getAllByText('Ready')).toHaveLength(1)
+      expect(screen.getByText('Needs sign-in')).toBeTruthy()
+      expect(screen.getByText('Needs setup')).toBeTruthy()
+    })
+
+    it('shows no Ready pill for a keyed provider the server marks needs_keys', async () => {
+      getToolsetConfig.mockResolvedValue(
+        config({
+          providers: [
+            {
+              name: 'ElevenLabs',
+              badge: 'paid',
+              tag: 'Most natural voices',
+              env_vars: [
+                {
+                  key: 'ELEVENLABS_API_KEY',
+                  prompt: 'ElevenLabs API key',
+                  url: 'https://x',
+                  default: null,
+                  is_set: false
+                }
+              ],
+              post_setup: null,
+              requires_nous_auth: false,
+              is_active: false,
+              status: 'needs_keys'
+            }
+          ]
+        })
+      )
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="tts" />)
+
+      await screen.findByText('ElevenLabs')
+      expect(screen.queryByText('Ready')).toBeNull()
+      // Missing keys are signalled by the env-var fields, not a warn pill.
+      expect(screen.queryByText('Needs sign-in')).toBeNull()
+      expect(screen.queryByText('Needs setup')).toBeNull()
+    })
+
+    it('falls back to the env-var heuristic when the backend sends no status', async () => {
+      // Older backend (no `status` field): keyless rows keep the legacy
+      // Ready pill, keyed-and-unset rows keep no pill. Narrow compat path —
+      // desktop and backend update on separate clocks.
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="tts" />)
+
+      await screen.findByText('Microsoft Edge TTS')
+      // Default config(): keyless Edge TTS (ready) + unset ElevenLabs (not).
+      expect(screen.getAllByText('Ready')).toHaveLength(1)
+      expect(screen.queryByText('Needs sign-in')).toBeNull()
+      expect(screen.queryByText('Needs setup')).toBeNull()
+    })
+
+    it('flips a needs_keys provider to Ready locally after its key is saved', async () => {
+      getToolsetConfig.mockResolvedValue(
+        config({
+          active_provider: 'ElevenLabs',
+          providers: [
+            {
+              name: 'ElevenLabs',
+              badge: 'paid',
+              tag: 'Most natural voices',
+              env_vars: [
+                {
+                  key: 'ELEVENLABS_API_KEY',
+                  prompt: 'ElevenLabs API key',
+                  url: 'https://x',
+                  default: null,
+                  is_set: false
+                }
+              ],
+              post_setup: null,
+              requires_nous_auth: false,
+              is_active: true,
+              status: 'needs_keys'
+            }
+          ]
+        })
+      )
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="tts" />)
+
+      expect(await screen.findByText('ELEVENLABS_API_KEY')).toBeTruthy()
+      expect(screen.queryByText('Ready')).toBeNull()
+
+      // Save a key: the pill must go Ready from the local envState patch even
+      // though the (now stale) server status still says needs_keys.
+      const trigger = await screen.findByRole('button', { name: /Actions for ELEVENLABS_API_KEY/ })
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Set' }))
+      fireEvent.change(await screen.findByPlaceholderText('ElevenLabs API key'), { target: { value: 'sk-live' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(screen.getByText('Ready')).toBeTruthy())
+    })
+  })
+
+  describe('post-setup installed state', () => {
+    it('renders Installed + Re-run setup instead of the primary CTA when the server says ready', async () => {
+      // Regression (Windows 11 Capabilities journey): "Run setup" rendered
+      // unconditionally, so an already-installed backend still showed the
+      // primary install CTA and clicking it re-ran the whole npm/Chromium
+      // install. status === 'ready' must flip to a resting Installed state.
+      getToolsetConfig.mockResolvedValue(
+        config({
+          name: 'browser',
+          active_provider: 'Local Browser',
+          providers: [
+            {
+              name: 'Local Browser',
+              badge: 'free',
+              tag: 'Headless Chromium, no API key needed',
+              env_vars: [],
+              post_setup: 'agent_browser',
+              requires_nous_auth: false,
+              is_active: true,
+              status: 'ready'
+            }
+          ]
+        })
+      )
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+      await screen.findByText('Local Browser')
+      expect(screen.getByText('Installed')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Re-run setup/ })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /^Run setup$/ })).toBeNull()
+    })
+
+    it('still runs the hook from the Re-run setup affordance', async () => {
+      getToolsetConfig.mockResolvedValue(
+        config({
+          name: 'browser',
+          active_provider: 'Local Browser',
+          providers: [
+            {
+              name: 'Local Browser',
+              badge: 'free',
+              tag: 'Headless Chromium, no API key needed',
+              env_vars: [],
+              post_setup: 'agent_browser',
+              requires_nous_auth: false,
+              is_active: true,
+              status: 'ready'
+            }
+          ]
+        })
+      )
+      runToolsetPostSetup.mockResolvedValue({ ok: true, pid: 4321, name: 'tools-post-setup', key: 'agent_browser' })
+      getActionStatus.mockResolvedValue({
+        exit_code: 0,
+        lines: ['agent-browser already installed, nothing to do'],
+        name: 'tools-post-setup',
+        pid: 4321,
+        running: false
+      })
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /Re-run setup/ }))
+
+      await waitFor(() => expect(runToolsetPostSetup).toHaveBeenCalledWith('browser', 'agent_browser'))
+    })
+
+    it('keeps the primary Run setup CTA when the server says needs_setup', async () => {
+      getToolsetConfig.mockResolvedValue(
+        config({
+          name: 'browser',
+          active_provider: 'Local Browser',
+          providers: [
+            {
+              name: 'Local Browser',
+              badge: 'free',
+              tag: 'Headless Chromium, no API key needed',
+              env_vars: [],
+              post_setup: 'agent_browser',
+              requires_nous_auth: false,
+              is_active: true,
+              status: 'needs_setup'
+            }
+          ]
+        })
+      )
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+      await screen.findByText('Local Browser')
+      expect(screen.getByRole('button', { name: /Run setup/ })).toBeTruthy()
+      expect(screen.queryByText('Installed')).toBeNull()
+    })
+  })
+
+  describe('managed Nous provider activation', () => {
+    const nousBrowserConfig = () =>
+      config({
+        name: 'browser',
+        active_provider: null,
+        providers: [
+          {
+            name: 'Nous Subscription (Browser Use cloud)',
+            badge: 'subscription',
+            tag: 'Managed Browser Use billed to your subscription',
+            env_vars: [],
+            post_setup: 'agent_browser',
+            requires_nous_auth: true,
+            is_active: false,
+            status: 'needs_auth'
+          }
+        ]
+      })
+
+    it('surfaces a sign-in notice when the PUT reports needs_nous_auth', async () => {
+      // Regression (Windows 11 Capabilities journey): the GUI wrote
+      // browser.cloud_provider but skipped the Portal entitlement handshake,
+      // so the managed row silently never activated. The endpoint now
+      // reports needs_nous_auth and the panel must surface a sign-in action
+      // instead of the misleading "provider selected" success toast.
+      const { notify } = await import('@/store/notifications')
+
+      getToolsetConfig.mockResolvedValue(nousBrowserConfig())
+      selectToolsetProvider.mockResolvedValue({
+        ok: true,
+        name: 'browser',
+        provider: 'Nous Subscription (Browser Use cloud)',
+        needs_nous_auth: true,
+        feature: 'browser'
+      })
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /Nous Subscription/ }))
+
+      await waitFor(() =>
+        expect(selectToolsetProvider).toHaveBeenCalledWith('browser', 'Nous Subscription (Browser Use cloud)')
+      )
+      await waitFor(() =>
+        expect(notify).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: 'warning',
+            action: expect.objectContaining({ label: expect.any(String) })
+          })
+        )
+      )
+      // No success toast — the row is not active yet.
+      expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'success' }))
+    })
+
+    it('drives the existing Nous OAuth device-code flow from the sign-in action and refetches', async () => {
+      const { notify } = await import('@/store/notifications')
+
+      getToolsetConfig.mockResolvedValue(nousBrowserConfig())
+      selectToolsetProvider.mockResolvedValue({
+        ok: true,
+        name: 'browser',
+        provider: 'Nous Subscription (Browser Use cloud)',
+        needs_nous_auth: true,
+        feature: 'browser'
+      })
+      startOAuthLogin.mockResolvedValue({
+        flow: 'device_code',
+        session_id: 'sess-1',
+        user_code: 'NOUS-1234',
+        verification_url: 'https://portal.nousresearch.com/device?user_code=NOUS-1234',
+        poll_interval: 5,
+        expires_in: 600
+      })
+      pollOAuthSession.mockResolvedValue({ session_id: 'sess-1', status: 'approved' })
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+
+      try {
+        const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+        render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+        fireEvent.click(await screen.findByRole('button', { name: /Nous Subscription/ }))
+
+        // Grab the sign-in action off the warning notification and invoke it —
+        // this is the affordance the toast renders as a button.
+        await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' })))
+
+        const warning = vi
+          .mocked(notify)
+          .mock.calls.map(call => call[0])
+          .find(input => input.kind === 'warning')
+
+        expect(warning?.action).toBeTruthy()
+        getToolsetConfig.mockClear()
+        warning!.action!.onClick()
+
+        await waitFor(() => expect(startOAuthLogin).toHaveBeenCalledWith('nous'))
+        expect(openSpy).toHaveBeenCalledWith(
+          'https://portal.nousresearch.com/device?user_code=NOUS-1234',
+          '_blank',
+          'noopener,noreferrer'
+        )
+        // Approved poll → the panel refetches the config so status flips.
+        await waitFor(() => expect(pollOAuthSession).toHaveBeenCalledWith('nous', 'sess-1'), { timeout: 8000 })
+        await waitFor(() => expect(getToolsetConfig).toHaveBeenCalled(), { timeout: 8000 })
+      } finally {
+        openSpy.mockRestore()
+      }
+    }, 20000)
+
+    it('shows the plain success toast when the managed row is already entitled', async () => {
+      const { notify } = await import('@/store/notifications')
+
+      getToolsetConfig.mockResolvedValue(nousBrowserConfig())
+      selectToolsetProvider.mockResolvedValue({
+        ok: true,
+        name: 'browser',
+        provider: 'Nous Subscription (Browser Use cloud)'
+      })
+
+      const { ToolsetConfigPanel } = await import('./toolset-config-panel')
+      render(<ToolsetConfigPanel onConfiguredChange={vi.fn()} toolset="browser" />)
+
+      fireEvent.click(await screen.findByRole('button', { name: /Nous Subscription/ }))
+
+      await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'success' })))
+      expect(startOAuthLogin).not.toHaveBeenCalled()
     })
   })
 })
