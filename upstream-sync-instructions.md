@@ -10,6 +10,8 @@
 
 ## 当前差异点 (Differences)
 
+> 注（2026-10-08）：原 Telegram Bootstrap 定制（`gateway/authz_mixin.py` 首用户自动授权 + `gateway/pairing.py` 的 `approve_user` 公开方法）已按需求移除，两文件恢复上游原样，后续同步无需保留。
+
 分为：新增文件和修改文件两类，每类下面按文件路径列出，同一个文件下的不同差异点分别列出，不要混在一起写。
 
 ### 新增文件 (New Files)
@@ -35,10 +37,6 @@
 - `locales/en.yaml`, `locales/zh.yaml`（原 `gateway/run.py::_gateway_provider_error_reply()` 的 rate-limit 文案，随 upstream 改为 i18n key 后迁移至此）
 
   1. 更改 `gateway.errors.rate_limited` 为指向 `https://hermesagentcloud.com/home?openByoKey=true` 的自定义引流文案（en 保留英文原文案结构，zh 提供对应中文翻译）。
-
-- `gateway/authz_mixin.py`:承接并实现了 Telegram Bootstrap 逻辑（原位于 `gateway/run.py`，随 upstream 重构迁移至此）。当没有任何白名单配置时，自动授权第一个与 Bot 通信的用户为 Owner，并将其 ID 写入 `.env`。
-
-- `gateway/pairing.py`: 在 `PairingStore` 中暴露了 `approve_user` 方法，支持程序化自动授权。
 
 - `docker/stage2-hook.sh`: 
 

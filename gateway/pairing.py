@@ -414,11 +414,6 @@ class PairingStore:
             for uid, info in self._load_json(self._approved_path(p)).items()
         ]
 
-    def approve_user(self, platform: str, user_id: str, user_name: str = "") -> None:
-        """Add a user to the approved list manually."""
-        with self._lock:
-            self._approve_user(platform, user_id, user_name)
-
     def _approve_user(self, platform: str, user_id: str, user_name: str = "") -> None:
         """Add a user to the approved list. Must be called under self._lock."""
         approved = self._load_json(self._approved_path(platform))

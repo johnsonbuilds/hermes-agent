@@ -673,25 +673,7 @@ class GatewayAuthorizationMixin:
                     return verdict
             if self._adapter_extra_allowlist_authorizes(source, user_id, is_group):
                 return True
-            if _env_truthy("GATEWAY_ALLOW_ALL_USERS"):
-                return True
-            # Fork customization: Telegram bootstrap — first user becomes owner
-            # when no allowlist exists (see upstream-sync-instructions.md).
-            if source.platform == Platform.TELEGRAM:
-                platform_name = source.platform.value if source.platform else ""
-                try:
-                    if pairing_store is not None and not pairing_store.list_approved(platform_name):
-                        pairing_store.approve_user(platform_name, user_id, source.user_name or "")
-                        try:
-                            from hermes_cli.config import save_env_value
-                            save_env_value("TELEGRAM_ALLOWED_USERS", user_id)
-                            logger.info("Bootstrap: First Telegram user %s (%s) saved to TELEGRAM_ALLOWED_USERS.", user_id, source.user_name)
-                        except Exception as e:
-                            logger.warning("Bootstrap: Approved %s but failed to update .env: %s", user_id, e)
-                        return True
-                except Exception:
-                    pass
-            return False
+            return _env_truthy("GATEWAY_ALLOW_ALL_USERS")
 
         if is_group_or_forum and source.chat_id:
             # Telegram group traffic authorized by chat ID (TELEGRAM_GROUP_ALLOWED_USERS gates the sender).
