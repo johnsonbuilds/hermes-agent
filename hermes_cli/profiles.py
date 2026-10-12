@@ -585,6 +585,9 @@ def _migrate_profile_config_if_outdated(profile_dir: Path) -> None:
     # Creation must not fail over an unmigratable old config; `hermes doctor --fix` surfaces
     # the detailed error in the target profile.
     with contextlib.suppress(Exception):
+        # Fork (ClawCloud): backfill a missing model block from hosted LLM_* env
+        # (additive only; explicit config untouched). Covers pre-template clones.
+        ensure_profile_model_block(profile_dir)
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
         from hermes_cli.config import check_config_version, migrate_config
         token = set_hermes_home_override(str(profile_dir))
@@ -788,6 +791,91 @@ def launch_model_seed(source_cfg: dict) -> dict:
     return seed
 
 
+# Fork (ClawCloud): hosted deployments resolve the model from LLM_* env through
+# ``${...}`` references in the profile config (see clawcloud-config.yaml.example,
+# which seeds the root home). Profiles created before that template existed have
+# no ``model`` block, so every consumer running under their home dies as
+# "No LLM provider configured" even though the env is set. The helpers below
+# backfill the missing block — additively only, never overwriting explicit user
+# config — for fresh profiles, migrated profiles, and live turns.
+# They are inert unless at least one LLM_* var is set, so interactive and test
+# contexts keep pristine upstream behavior. See upstream-sync-instructions.md.
+_LLM_ENV_VARS = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL_ID", "LLM_API_KEY")
+
+_CLAWCLOUD_MODEL_SEED = {
+    "provider": "${LLM_PROVIDER}",
+    "base_url": "${LLM_BASE_URL}",
+    "default": "${LLM_MODEL_ID}",
+    "api_key": "${LLM_API_KEY}",
+    "api_mode": "chat_completions",
+}
+
+_ensured_model_block_homes: set = set()
+_ensured_model_block_lock = threading.Lock()
+
+
+def _clawcloud_model_seed_if_hosted() -> dict:
+    """``{"model": ...}`` seed mirroring the hosted root template, or ``{}``.
+
+    Only when the hosted env is present; otherwise fresh profiles keep the
+    upstream empty behavior and ``hermes model`` sets the block later."""
+    if not any(os.getenv(var) for var in _LLM_ENV_VARS):
+        return {}
+    return {"model": dict(_CLAWCLOUD_MODEL_SEED)}
+
+
+def ensure_profile_model_block(home=None) -> bool:
+    """Fill a missing ``model`` block with hosted ``${LLM_*}`` refs; ``True`` if written.
+
+    Additive only: an existing non-empty ``model`` mapping (explicit user config,
+    including a hardcoded provider) is left untouched. A missing ``config.yaml``
+    is left to the creation paths. Best-effort — never raises. Once per process
+    per home; hot paths (agent init runs this every turn) degrade to a set lookup.
+    """
+    try:
+        if not any(os.getenv(var) for var in _LLM_ENV_VARS):
+            return False
+        if home is None:
+            from hermes_constants import get_hermes_home
+            home = get_hermes_home()
+        key = str(Path(home))
+        with _ensured_model_block_lock:
+            if key in _ensured_model_block_homes:
+                return False
+        from hermes_cli.config import atomic_config_write, read_user_config_raw
+        cfg_path = Path(home) / "config.yaml"
+        if not cfg_path.is_file():
+            return False
+        data = read_user_config_raw(cfg_path)
+        if not isinstance(data, dict):
+            return False
+        existing = data.get("model")
+        if isinstance(existing, dict) and existing:
+            # Explicit user config (including a hardcoded provider): hands off,
+            # but memoize so hot paths stop re-reading this home.
+            with _ensured_model_block_lock:
+                _ensured_model_block_homes.add(key)
+            return False
+        if isinstance(existing, dict):
+            merged = {**dict(_CLAWCLOUD_MODEL_SEED)}
+            data["model"] = merged
+        elif existing is None:
+            data["model"] = dict(_CLAWCLOUD_MODEL_SEED)
+        else:
+            # Legacy scalar (e.g. ``model: gpt-4``) — user-written, hands off.
+            with _ensured_model_block_lock:
+                _ensured_model_block_homes.add(key)
+            return False
+        atomic_config_write(cfg_path, data)
+        with _ensured_model_block_lock:
+            _ensured_model_block_homes.add(key)
+        logger.info("profile %s: backfilled missing model block from hosted LLM_* env", key)
+        return True
+    except Exception as exc:
+        logger.debug("profile model-block backfill skipped: %s", exc)
+        return False
+
+
 def _seed_model_config(profile_dir: Path) -> None:
     """Copy (not link) the active profile's model block into a fresh profile so it is usable;
     profiles stay independent islands afterwards."""
@@ -799,6 +887,11 @@ def _seed_model_config(profile_dir: Path) -> None:
         from hermes_cli.config import atomic_config_write, read_user_config_raw
         source = get_hermes_home() / "config.yaml"
         seed = launch_model_seed(read_user_config_raw(source)) if source.is_file() else {}
+        if not seed:
+            # Fork (ClawCloud): the launch profile itself has no model block
+            # (e.g. pre-template root). Seed the hosted refs directly so the
+            # fresh profile still resolves LLM_* env; inert without that env.
+            seed = _clawcloud_model_seed_if_hosted()
         if seed:
             atomic_config_write(config_path, seed)
 

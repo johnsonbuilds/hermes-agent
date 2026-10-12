@@ -38,6 +38,28 @@
 
   1. 更改 `gateway.errors.rate_limited` 为指向 `https://hermesagentcloud.com/home?openByoKey=true` 的自定义引流文案（en 保留英文原文案结构，zh 提供对应中文翻译）。
 
+- `hermes_cli/profiles.py`（hosted profile 的 `${LLM_*}` model 块兜底）:
+
+  1. 新增 `_CLAWCLOUD_MODEL_SEED` / `_clawcloud_model_seed_if_hosted()` /
+     `ensure_profile_model_block()`：缺 `model` 块时回填与
+     `clawcloud-config.yaml.example` 同形的 `${LLM_PROVIDER}` /
+     `${LLM_BASE_URL}` / `${LLM_MODEL_ID}` / `${LLM_API_KEY}` /
+     `api_mode` 引用。纯新增函数；仅当任一 `LLM_*` env 存在时生效，
+     无该 env 时保持上游原行为。
+  2. `_seed_model_config`：launch profile 本身无 model 块时用上述 seed
+     兜底（原逻辑是留空）。
+  3. `_migrate_profile_config_if_outdated`：创建时对既有 config 做同样的
+     幂等回填。以上均为只增不改：已有非空 `model` mapping（含硬编码
+     provider）、scalar 写法、缺失文件一律不动。
+
+- `agent/agent_init.py`（同上，运行期 hook）:
+
+  1. `_routed_client_kwargs` 顶部调一次 `ensure_profile_model_block()`（当前
+     home，override 已生效），每进程每 home 只做一次 real work，之后退化
+     为 set 查找，带 `suppress`，失败不影响原流程。没有此 hook，模板出现
+     之前建好的老 profile 在 WebUI turn / per-profile 网关下永远报
+     "No LLM provider configured"。
+
 - `docker/stage2-hook.sh`: 
 
 1. s6-overlay 的 stage2 启动钩子。首启动 seed 配置时使用 clawcloud 的 env/config example 文件（`.clawcloud.env.example` / `clawcloud-config.yaml.example`），而非 upstream 的 `.env.example` / `cli-config.yaml.example`。

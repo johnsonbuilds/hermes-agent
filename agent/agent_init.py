@@ -851,6 +851,15 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Optional[
     no-provider diagnostic. ``None`` when the chain landed on a MoA preset: the facade is
     already bound and there is no OpenAI client to construct.
     """
+    # Fork (ClawCloud): hosted profiles created before the root template carried
+    # a model block resolve no provider even though LLM_* env is set. Backfill
+    # the missing block once per process (additive only; explicit user config is
+    # never touched; inert without LLM_* env) before the router runs, so every
+    # consumer under this home — CLI, gateway, WebUI in-process — behaves like
+    # root. See upstream-sync-instructions.md.
+    with suppress(Exception):
+        from hermes_cli.profiles import ensure_profile_model_block
+        ensure_profile_model_block()
     from agent.auxiliary_client import resolve_provider_client
     _routed_client, _ = resolve_provider_client(
         agent.provider or "auto", model=agent.model, raw_codex=True)
