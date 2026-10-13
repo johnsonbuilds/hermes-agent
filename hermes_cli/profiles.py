@@ -850,9 +850,12 @@ def _model_block_needs_hosted_fill(model) -> bool:
         return True
     for key, value in model.items():
         if key == "provider":
-            if str(value or "").strip().lower() not in ("", "custom", _CLAWCLOUD_PROVIDER_NAME):
-                return False
-            continue
+            # Raw file keeps the literal "${LLM_PROVIDER}" (expansion happens at load);
+            # treat the ref like its hosted values. Anything else named is explicit.
+            pv = str(value or "").strip().lower()
+            if not pv or pv in ("custom", _CLAWCLOUD_PROVIDER_NAME) or _is_env_ref(value):
+                continue
+            return False
         if key in ("default", "model"):
             continue
         if _is_env_ref(value):
