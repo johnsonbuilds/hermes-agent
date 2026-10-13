@@ -40,17 +40,22 @@
 
 - `hermes_cli/profiles.py`（hosted profile 的 `${LLM_*}` model 块兜底）:
 
-  1. 新增 `_CLAWCLOUD_MODEL_SEED` / `_clawcloud_model_seed_if_hosted()` /
-     `ensure_profile_model_block()`：缺 `model` 块时回填与
-     `clawcloud-config.yaml.example` 同形的 `${LLM_PROVIDER}` /
-     `${LLM_BASE_URL}` / `${LLM_MODEL_ID}` / `${LLM_API_KEY}` /
-     `api_mode` 引用。纯新增函数；仅当任一 `LLM_*` env 存在时生效，
-     无该 env 时保持上游原行为。
-  2. `_seed_model_config`：launch profile 本身无 model 块时用上述 seed
-     兜底（原逻辑是留空）。
-  3. `_migrate_profile_config_if_outdated`：创建时对既有 config 做同样的
-     幂等回填。以上均为只增不改：已有非空 `model` mapping（含硬编码
-     provider）、scalar 写法、缺失文件一律不动。
+  1. 新增 `_CLAWCLOUD_PROVIDER_NAME`（`"clawcloud"`）/
+     `_CLAWCLOUD_MODEL_SEED` / `_CLAWCLOUD_PROVIDERS_SEED` /
+     `_clawcloud_model_seed_if_hosted()` /
+     `ensure_profile_model_block()`：缺 `model` 块或模板形旧块时回填
+     canonical 形态——具名 `providers.clawcloud` 条目 +
+     `model.provider: clawcloud`，其余 `${LLM_*}` 引用与模板同形。
+     背景：梯子/pool 只认具名条目，bare-`custom` 配 `model.api_key`
+     在任何 routed 路径下都解不出 key（2026-10-12 实证），网关短路不受影响。
+  2. 只增不改：第三方 provider、硬编码 URL/key/mode、一句话 scalar、
+     缺失文件一律不动；无任一 `LLM_*` env 时全程 no-op。
+     `default`/model-slug 恒保留原文。`providers` 下已有兄弟条目保留，
+     只增 `clawcloud` 键。
+  3. `_seed_model_config`（新建兜底）、
+     `_migrate_profile_config_if_outdated`（创建时回填）调用它。
+  4. 存量 WebUI 会话若存着 `model_provider='custom'` 仍走死路，需新建会话
+     （或重选模型），属已知行为，不在本次代码范围。
 
 - `agent/agent_init.py`（同上，运行期 hook）:
 

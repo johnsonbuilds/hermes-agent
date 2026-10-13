@@ -1,8 +1,23 @@
 # =============================================================================
 # Model Configuration
+#
+# Hosted contract (ClawCloud): the WebUI in-process chat and per-profile
+# gateways resolve credentials through the ladder/pool system, which only
+# serves a bare "custom" request when a NAMED providers entry exists — a bare
+# ``provider: custom`` with only ``model.api_key`` never seeds any pool
+# (verified 2026-10-12). So the hosted endpoint lives as a named entry and
+# ``model.provider`` points at that name. ``model.api_key``/``model.base_url``
+# are intentionally duplicated: the gateway's explicit-credential short
+# circuit reads them directly and is provider-name agnostic, so Telegram
+# behavior is byte-identical before/after the rename. ``LLM_PROVIDER`` is
+# retired by this shape (kept accepted, no longer consumed).
 # =============================================================================
+providers:
+  clawcloud:
+    base_url: "${LLM_BASE_URL}"
+    api_key: "${LLM_API_KEY}"
 model:
-  provider: "${LLM_PROVIDER}"
+  provider: clawcloud
   base_url: "${LLM_BASE_URL}"
   default: "${LLM_MODEL_ID}"
   api_key: "${LLM_API_KEY}"

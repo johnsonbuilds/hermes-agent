@@ -792,45 +792,132 @@ def launch_model_seed(source_cfg: dict) -> dict:
 
 
 # Fork (ClawCloud): hosted deployments resolve the model from LLM_* env through
-# ``${...}`` references in the profile config (see clawcloud-config.yaml.example,
-# which seeds the root home). Profiles created before that template existed have
-# no ``model`` block, so every consumer running under their home dies as
-# "No LLM provider configured" even though the env is set. The helpers below
-# backfill the missing block — additively only, never overwriting explicit user
-# config — for fresh profiles, migrated profiles, and live turns.
+# ``${...}`` references in the profile config (see clawcloud-config.yaml.example).
+# The canonical hosted shape is a NAMED providers entry plus ``model.provider``
+# pointing at that name: the ladder/pool system only serves a bare ``"custom"``
+# request when such an entry exists — a bare ``provider: custom`` with only
+# ``model.api_key`` never seeds any pool and always dies as "No LLM provider
+# configured" on routed (non-explicit) paths such as WebUI in-process turns
+# (verified 2026-10-12; the gateway's explicit-credential short circuit is
+# unaffected and reads ``model.api_key``/``model.base_url`` directly).
+# The helpers below backfill that shape — additively only, never overwriting
+# explicit user config — for fresh profiles, migrated profiles, and live turns.
 # They are inert unless at least one LLM_* var is set, so interactive and test
 # contexts keep pristine upstream behavior. See upstream-sync-instructions.md.
 _LLM_ENV_VARS = ("LLM_PROVIDER", "LLM_BASE_URL", "LLM_MODEL_ID", "LLM_API_KEY")
 
+_CLAWCLOUD_PROVIDER_NAME = "clawcloud"
+
 _CLAWCLOUD_MODEL_SEED = {
-    "provider": "${LLM_PROVIDER}",
+    "provider": _CLAWCLOUD_PROVIDER_NAME,
     "base_url": "${LLM_BASE_URL}",
     "default": "${LLM_MODEL_ID}",
     "api_key": "${LLM_API_KEY}",
     "api_mode": "chat_completions",
 }
 
+_CLAWCLOUD_PROVIDERS_SEED = {
+    _CLAWCLOUD_PROVIDER_NAME: {
+        "base_url": "${LLM_BASE_URL}",
+        "api_key": "${LLM_API_KEY}",
+    },
+}
+
 _ensured_model_block_homes: set = set()
 _ensured_model_block_lock = threading.Lock()
 
 
+def _is_env_ref(value) -> bool:
+    """True for an unresolved ``${...}`` reference (or blank) — i.e. nothing user-explicit."""
+    return not isinstance(value, str) or not value.strip() or (
+        value.strip().startswith("${") and value.strip().endswith("}"))
+
+
+def _model_block_needs_hosted_fill(model) -> bool:
+    """True when the block is absent/empty or template-shaped — i.e. nothing user-explicit inside.
+
+    ``provider`` may only be blank, bare ``custom`` or the hosted name; ``default``/``model``
+    (the model slug) never vetoes and is preserved verbatim on fill. Every other key must be
+    blank, a ``${...}`` ref, or equal to the canonical seed value (e.g. ``api_mode``).
+    Anything else — a hand-written URL/key/mode, or a third-party provider — means the user
+    configured this profile deliberately: hands off, so we can never hijack their endpoint.
+    """
+    if model is None:
+        return True
+    if not isinstance(model, dict):
+        return False
+    if not model:
+        return True
+    for key, value in model.items():
+        if key == "provider":
+            if str(value or "").strip().lower() not in ("", "custom", _CLAWCLOUD_PROVIDER_NAME):
+                return False
+            continue
+        if key in ("default", "model"):
+            continue
+        if _is_env_ref(value):
+            continue
+        if value == _CLAWCLOUD_MODEL_SEED.get(key):
+            continue
+        return False
+    return True
+
+
 def _clawcloud_model_seed_if_hosted() -> dict:
-    """``{"model": ...}`` seed mirroring the hosted root template, or ``{}``.
+    """Canonical hosted seed (model block + named providers entry), or ``{}``.
 
     Only when the hosted env is present; otherwise fresh profiles keep the
     upstream empty behavior and ``hermes model`` sets the block later."""
     if not any(os.getenv(var) for var in _LLM_ENV_VARS):
         return {}
-    return {"model": dict(_CLAWCLOUD_MODEL_SEED)}
+    return {
+        "model": dict(_CLAWCLOUD_MODEL_SEED),
+        "providers": {_CLAWCLOUD_PROVIDER_NAME: dict(_CLAWCLOUD_PROVIDERS_SEED[_CLAWCLOUD_PROVIDER_NAME])},
+    }
+
+
+def _merge_canonical_hosted_shape(data: dict) -> bool:
+    """Merge the canonical shape into a raw config mapping; ``True`` if changed.
+
+    ``model`` is (re)built from the seed while preserving the profile's own
+    extra keys; ``providers.clawcloud`` is added only when absent. Existing
+    sibling entries and explicit values elsewhere are untouched. Callers must
+    have established ``_model_block_needs_hosted_fill`` first.
+    """
+    changed = False
+    merged_model = dict(_CLAWCLOUD_MODEL_SEED)
+    existing_model = data.get("model")
+    if isinstance(existing_model, dict):
+        for key, value in existing_model.items():
+            # Provider is forced to the hosted name; blank values fall back to
+            # the seed refs (an emptied key means "unset", never "deliberate").
+            if key == "provider" or value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            merged_model[key] = value
+    if data.get("model") != merged_model:
+        data["model"] = merged_model
+        changed = True
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        data["providers"] = {_CLAWCLOUD_PROVIDER_NAME: dict(_CLAWCLOUD_PROVIDERS_SEED[_CLAWCLOUD_PROVIDER_NAME])}
+        changed = True
+    elif _CLAWCLOUD_PROVIDER_NAME not in providers:
+        providers[_CLAWCLOUD_PROVIDER_NAME] = dict(_CLAWCLOUD_PROVIDERS_SEED[_CLAWCLOUD_PROVIDER_NAME])
+        changed = True
+    return changed
 
 
 def ensure_profile_model_block(home=None) -> bool:
-    """Fill a missing ``model`` block with hosted ``${LLM_*}`` refs; ``True`` if written.
+    """Fill a missing/template-shaped ``model`` block with the canonical hosted
+    shape (named ``providers.clawcloud`` entry + ``model.provider: clawcloud``);
+    ``True`` if written.
 
-    Additive only: an existing non-empty ``model`` mapping (explicit user config,
-    including a hardcoded provider) is left untouched. A missing ``config.yaml``
-    is left to the creation paths. Best-effort — never raises. Once per process
-    per home; hot paths (agent init runs this every turn) degrade to a set lookup.
+    Additive only: explicit user config is never touched (see
+    ``_model_block_needs_hosted_fill``). A missing ``config.yaml`` is left to
+    the creation paths. Best-effort — never raises. Once per process per home;
+    hot paths (agent init runs this every turn) degrade to a set lookup.
     """
     try:
         if not any(os.getenv(var) for var in _LLM_ENV_VARS):
@@ -849,27 +936,18 @@ def ensure_profile_model_block(home=None) -> bool:
         data = read_user_config_raw(cfg_path)
         if not isinstance(data, dict):
             return False
-        existing = data.get("model")
-        if isinstance(existing, dict) and existing:
-            # Explicit user config (including a hardcoded provider): hands off,
-            # but memoize so hot paths stop re-reading this home.
+        if not _model_block_needs_hosted_fill(data.get("model")):
             with _ensured_model_block_lock:
                 _ensured_model_block_homes.add(key)
             return False
-        if isinstance(existing, dict):
-            merged = {**dict(_CLAWCLOUD_MODEL_SEED)}
-            data["model"] = merged
-        elif existing is None:
-            data["model"] = dict(_CLAWCLOUD_MODEL_SEED)
-        else:
-            # Legacy scalar (e.g. ``model: gpt-4``) — user-written, hands off.
+        if not _merge_canonical_hosted_shape(data):
             with _ensured_model_block_lock:
                 _ensured_model_block_homes.add(key)
             return False
         atomic_config_write(cfg_path, data)
         with _ensured_model_block_lock:
             _ensured_model_block_homes.add(key)
-        logger.info("profile %s: backfilled missing model block from hosted LLM_* env", key)
+        logger.info("profile %s: backfilled canonical hosted model shape from LLM_* env", key)
         return True
     except Exception as exc:
         logger.debug("profile model-block backfill skipped: %s", exc)
