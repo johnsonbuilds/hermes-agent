@@ -665,9 +665,8 @@ gateway:
     skip_hint: 'Reply "skip" to skip this question.'
 
   errors:
-    # Fork customization: point free-tier users to bring their own key
-    # (see upstream-sync-instructions.md).
-    rate_limited: "⚠️ I've hit the free usage limit.\n\nYou can keep me running by adding your API key:\n👉 https://hermesagentcloud.com/home?openByoKey=true\n\nTakes ~1 minutes, then I'm back 🚀"
+    # Custom rate-limit message pointing users to add their own API key
+    rate_limited: "The LLM has reached its usage limit. To continue chatting, go to Settings → Providers, add your own API key, and click Save."
     auth_failed: "⚠️ Sign-in to the AI model service failed. Use /login to sign in again, or ask whoever runs this bot to run `hermes doctor` on the host."
     bad_request: "⚠️ The AI model service rejected this request. Try rephrasing your message, or use /model to switch models."
     connection_interrupted: "⚠️ The connection to the AI model service was interrupted mid-request — usually transient. Use /retry to try again; if it keeps happening, run `hermes doctor` on the host."

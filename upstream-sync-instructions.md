@@ -34,9 +34,9 @@
 
   注：2026-10-08 同步后，以下原 `gateway/run.py` 定制不再需要独立保留：(a) `_load_gateway_config()` 的 `${ENV_VAR}` 展开已由 upstream 通过 `load_user_config_effective()` + `gateway/config_loader.py` 原生实现；(b) 旧的 `home_channel = self.config.get_home_channel(...)` 一行是未被使用的死代码，已丢弃。
 
-- `locales/en.yaml`, `locales/zh.yaml`（原 `gateway/run.py::_gateway_provider_error_reply()` 的 rate-limit 文案，随 upstream 改为 i18n key 后迁移至此）
+- `locales/en.yaml`, `locales/zh.yaml`（自定义 rate-limit 文案）
 
-  1. 更改 `gateway.errors.rate_limited` 为指向 `https://hermesagentcloud.com/home?openByoKey=true` 的自定义引流文案（en 保留英文原文案结构，zh 提供对应中文翻译）。
+  1. 更改 `gateway.errors.rate_limited` 为引导用户在设置中添加自己的 API Key 的自定义文案（en 保留英文原文案，zh 提供对应中文翻译）。
 
 - `hermes_cli/profiles.py`（hosted profile 的 `${LLM_*}` model 块兜底）:
 
